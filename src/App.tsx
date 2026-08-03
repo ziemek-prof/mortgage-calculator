@@ -162,7 +162,7 @@ export default function App() {
       <footer className="mt-12 border-t border-slate-200 py-6 text-center text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <div className="mx-auto max-w-7xl px-4">
           <p>
-            Mortgage Calculator & Payoff Accelerator • Real-time amortization schedule, prepayment analytics & PDF reports.
+            Mortgage Pro by Prof. Ziemek • Real-time amortization schedule, prepayment analytics & PDF reports.
           </p>
         </div>
       </footer>
