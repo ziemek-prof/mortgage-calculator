@@ -36,7 +36,7 @@ export function exportMortgagePDFReport(
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
-  doc.text('MORTGAGE & PAYOFF ANALYSIS REPORT', 14, 18);
+  doc.text('MORTGAGE PRO BY PROF. ZIEMEK', 14, 18);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');

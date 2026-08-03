@@ -1,5 +1,5 @@
 {
-  "name": "Mortgage Calculator",
+  "name": "Mortgage Pro by Prof. Ziemek",
   "description": "Interactive mortgage calculator with prepayment options, early payoff analysis, interest vs principal breakdown, interactive charts, dark mode, and PDF export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -47,8 +47,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <h1 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
               Mortgage Pro
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-              Calculators & Payoff Accelerator
+            <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+              by Prof. Ziemek
             </p>
           </div>
         </div>
