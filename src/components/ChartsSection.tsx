@@ -33,49 +33,108 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
   const [dataResolution, setDataResolution] = useState<'annual' | 'monthly'>('annual');
 
   // Prepare Balance Comparison Chart Data
-  const standardMap = new Map<number, number>();
+  const standardMap = new Map<number, import('../types/mortgage').AmortizationRow>();
   result.standardSchedule.forEach((row) => {
-    standardMap.set(row.paymentNumber, row.endBalance);
+    standardMap.set(row.paymentNumber, row);
   });
 
-  const prepayMap = new Map<number, number>();
+  const prepayMap = new Map<number, import('../types/mortgage').AmortizationRow>();
   result.prepaymentSchedule.forEach((row) => {
-    prepayMap.set(row.paymentNumber, row.endBalance);
+    prepayMap.set(row.paymentNumber, row);
   });
 
   const maxMonths = Math.max(result.monthsStandard, result.monthsWithPrepayment);
 
-  // Sample data at annual intervals (every 12 months) or monthly
-  const step = dataResolution === 'annual' ? 12 : 1;
-  const balanceChartData = [];
+  const balanceChartData: {
+    monthNumber: number;
+    label: string;
+    standardBalance: number;
+    prepaymentBalance: number;
+  }[] = [];
 
-  for (let m = 1; m <= maxMonths; m += step) {
-    const row = result.standardSchedule.find((r) => r.paymentNumber === m) ||
-      result.prepaymentSchedule.find((r) => r.paymentNumber === m);
-    
-    if (!row) continue;
+  if (maxMonths > 0) {
+    const monthNumbersSet = new Set<number>();
 
-    const stdBalance = standardMap.get(m) ?? 0;
-    const prepayBalance = prepayMap.has(m) ? prepayMap.get(m)! : 0;
+    // Always include Start (Month 0)
+    monthNumbersSet.add(0);
 
-    balanceChartData.push({
-      monthNumber: m,
-      label: dataResolution === 'annual' ? `Yr ${Math.ceil(m / 12)} (${row.year})` : row.dateStr,
-      standardBalance: Math.max(0, stdBalance),
-      prepaymentBalance: Math.max(0, prepayBalance),
-    });
-  }
+    if (dataResolution === 'annual') {
+      const totalYears = Math.ceil(maxMonths / 12);
+      for (let y = 1; y <= totalYears; y++) {
+        const m = Math.min(y * 12, maxMonths);
+        monthNumbersSet.add(m);
+      }
+    } else {
+      for (let m = 1; m <= maxMonths; m++) {
+        monthNumbersSet.add(m);
+      }
+    }
 
-  // Ensure 0 endpoint is added
-  const lastStdRow = result.standardSchedule[result.standardSchedule.length - 1];
-  const lastPrepayRow = result.prepaymentSchedule[result.prepaymentSchedule.length - 1];
-  
-  if (lastPrepayRow && !balanceChartData.some((d) => d.label === lastPrepayRow.dateStr)) {
-    balanceChartData.push({
-      monthNumber: lastPrepayRow.paymentNumber,
-      label: lastPrepayRow.dateStr,
-      standardBalance: Math.max(0, standardMap.get(lastPrepayRow.paymentNumber) ?? 0),
-      prepaymentBalance: 0,
+    // Always include exact payoff months if present
+    if (result.monthsStandard > 0) {
+      monthNumbersSet.add(result.monthsStandard);
+    }
+    if (result.monthsWithPrepayment > 0) {
+      monthNumbersSet.add(result.monthsWithPrepayment);
+    }
+
+    const sortedMonths = Array.from(monthNumbersSet).sort((a, b) => a - b);
+
+    sortedMonths.forEach((m) => {
+      let label = '';
+      if (m === 0) {
+        label = 'Start';
+      } else {
+        const stdRow = standardMap.get(m);
+        const prepayRow = prepayMap.get(m);
+        const refRow = stdRow || prepayRow;
+
+        if (dataResolution === 'annual') {
+          const yr = Math.ceil(m / 12);
+          label = refRow ? `Yr ${yr} (${refRow.year})` : `Yr ${yr}`;
+        } else {
+          label = refRow ? refRow.dateStr : `Mo ${m}`;
+        }
+      }
+
+      // Calculate standard balance at month m
+      let stdBalance = 0;
+      if (m === 0) {
+        stdBalance = result.loanAmount;
+      } else if (m < result.monthsStandard) {
+        const row = standardMap.get(m);
+        if (row) {
+          stdBalance = row.endBalance;
+        } else {
+          const prevRow = result.standardSchedule.filter((r) => r.paymentNumber <= m).pop();
+          stdBalance = prevRow ? prevRow.endBalance : result.loanAmount;
+        }
+      } else {
+        stdBalance = 0;
+      }
+
+      // Calculate prepayment balance at month m
+      let prepayBalance = 0;
+      if (m === 0) {
+        prepayBalance = result.loanAmount;
+      } else if (m < result.monthsWithPrepayment) {
+        const row = prepayMap.get(m);
+        if (row) {
+          prepayBalance = row.endBalance;
+        } else {
+          const prevRow = result.prepaymentSchedule.filter((r) => r.paymentNumber <= m).pop();
+          prepayBalance = prevRow ? prevRow.endBalance : result.loanAmount;
+        }
+      } else {
+        prepayBalance = 0;
+      }
+
+      balanceChartData.push({
+        monthNumber: m,
+        label,
+        standardBalance: Math.max(0, Math.round(stdBalance)),
+        prepaymentBalance: Math.max(0, Math.round(prepayBalance)),
+      });
     });
   }
 
