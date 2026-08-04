@@ -32,7 +32,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
   const [activeChartTab, setActiveChartTab] = useState<'balance' | 'interestVsPrincipal' | 'breakdown'>('balance');
   const [dataResolution, setDataResolution] = useState<'annual' | 'monthly'>('annual');
   const [selectedBarSchedule, setSelectedBarSchedule] = useState<'prepayment' | 'standard'>('prepayment');
-  const [annualGroupingMode, setAnnualGroupingMode] = useState<'calendar' | 'loanYear'>('calendar');
+  const [annualGroupingMode, setAnnualGroupingMode] = useState<'calendar' | 'loanYear'>('loanYear');
 
   // Prepare Balance Comparison Chart Data
   const standardMap = new Map<number, import('../types/mortgage').AmortizationRow>();
@@ -143,60 +143,107 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
     ExtraPayment: number;
   }[] = [];
 
+  // Always base the full timeline on the standard schedule duration so time scale is consistent
+  const totalStandardMonths = result.standardSchedule.length;
+  const totalStandardYears = Math.ceil(totalStandardMonths / 12);
+
   if (dataResolution === 'annual') {
     if (annualGroupingMode === 'calendar') {
-      const annualMap = new Map<number, { year: number; principal: number; interest: number; extra: number; count: number }>();
+      // Collect all calendar years from standard schedule to maintain full timeline
+      const calendarYearsMap = new Map<number, { count: number }>();
+      result.standardSchedule.forEach((row) => {
+        const existing = calendarYearsMap.get(row.year) || { count: 0 };
+        existing.count += 1;
+        calendarYearsMap.set(row.year, existing);
+      });
+
+      // Collect data from active schedule
+      const activeAnnualMap = new Map<number, { principal: number; interest: number; extra: number; count: number }>();
       activeSchedule.forEach((row) => {
-        const existing = annualMap.get(row.year) || { year: row.year, principal: 0, interest: 0, extra: 0, count: 0 };
+        const existing = activeAnnualMap.get(row.year) || { principal: 0, interest: 0, extra: 0, count: 0 };
         existing.principal += row.principalPaid;
         existing.interest += row.interestPaid;
         existing.extra += row.extraPayment;
         existing.count += 1;
-        annualMap.set(row.year, existing);
+        activeAnnualMap.set(row.year, existing);
       });
 
-      annualMap.forEach((val, yr) => {
-        const label = val.count < 12 ? `${yr} (${val.count}m)` : `${yr}`;
-        interestVsPrincipalData.push({
-          label,
-          Interest: Math.round(val.interest),
-          Principal: Math.round(val.principal),
-          ExtraPayment: Math.round(val.extra),
-        });
+      calendarYearsMap.forEach((stdVal, yr) => {
+        const activeVal = activeAnnualMap.get(yr);
+        if (activeVal) {
+          const isPartial = activeVal.count < 12;
+          const label = isPartial ? `${yr} (${activeVal.count}m)` : `${yr}`;
+          interestVsPrincipalData.push({
+            label,
+            Interest: Math.round(activeVal.interest),
+            Principal: Math.round(activeVal.principal),
+            ExtraPayment: Math.round(activeVal.extra),
+          });
+        } else {
+          // Paid off year
+          interestVsPrincipalData.push({
+            label: `${yr}`,
+            Interest: 0,
+            Principal: 0,
+            ExtraPayment: 0,
+          });
+        }
       });
     } else {
       // Group by Loan Year (every 12 payments = 1 loan year)
-      const totalLoanYears = Math.ceil(activeSchedule.length / 12);
-      for (let ly = 1; ly <= totalLoanYears; ly++) {
+      for (let ly = 1; ly <= totalStandardYears; ly++) {
         const startIndex = (ly - 1) * 12;
         const yearRows = activeSchedule.slice(startIndex, startIndex + 12);
-        let pSum = 0;
-        let iSum = 0;
-        let eSum = 0;
-        yearRows.forEach((r) => {
-          pSum += r.principalPaid;
-          iSum += r.interestPaid;
-          eSum += r.extraPayment;
-        });
-        const label = yearRows.length < 12 ? `Yr ${ly} (${yearRows.length}m)` : `Yr ${ly}`;
-        interestVsPrincipalData.push({
-          label,
-          Interest: Math.round(iSum),
-          Principal: Math.round(pSum),
-          ExtraPayment: Math.round(eSum),
-        });
+
+        if (yearRows.length > 0) {
+          let pSum = 0;
+          let iSum = 0;
+          let eSum = 0;
+          yearRows.forEach((r) => {
+            pSum += r.principalPaid;
+            iSum += r.interestPaid;
+            eSum += r.extraPayment;
+          });
+          const isPartial = yearRows.length < 12;
+          const label = isPartial ? `Yr ${ly} (${yearRows.length}m)` : `Yr ${ly}`;
+          interestVsPrincipalData.push({
+            label,
+            Interest: Math.round(iSum),
+            Principal: Math.round(pSum),
+            ExtraPayment: Math.round(eSum),
+          });
+        } else {
+          // Post-payoff loan year
+          interestVsPrincipalData.push({
+            label: `Yr ${ly}`,
+            Interest: 0,
+            Principal: 0,
+            ExtraPayment: 0,
+          });
+        }
       }
     }
   } else {
-    // Monthly data (all months)
-    activeSchedule.forEach((row) => {
-      interestVsPrincipalData.push({
-        label: row.dateStr,
-        Interest: Math.round(row.interestPaid),
-        Principal: Math.round(row.principalPaid),
-        ExtraPayment: Math.round(row.extraPayment),
-      });
-    });
+    // Monthly data covering all standard months to maintain identical time scale
+    for (let m = 1; m <= totalStandardMonths; m++) {
+      if (m <= activeSchedule.length) {
+        const row = activeSchedule[m - 1];
+        interestVsPrincipalData.push({
+          label: row.dateStr,
+          Interest: Math.round(row.interestPaid),
+          Principal: Math.round(row.principalPaid),
+          ExtraPayment: Math.round(row.extraPayment),
+        });
+      } else {
+        const stdRow = result.standardSchedule[m - 1];
+        interestVsPrincipalData.push({
+          label: stdRow ? stdRow.dateStr : `Mo ${m}`,
+          Interest: 0,
+          Principal: 0,
+          ExtraPayment: 0,
+        });
+      }
+    }
   }
 
   // Payment Breakdown Donut Data
@@ -219,13 +266,25 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
   const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const total = payload.reduce((sum: number, entry: any) => sum + (Number(entry.value) || 0), 0);
+      if (total === 0) {
+        return (
+          <div className="rounded-xl border border-emerald-500/30 bg-slate-900 p-3 text-xs text-white shadow-xl min-w-[170px]">
+            <p className="font-bold text-emerald-400 border-b border-slate-800 pb-1.5 mb-1.5">{label}</p>
+            <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
+              <span>🎉</span>
+              <span>Mortgage Fully Paid Off</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">No monthly payments required.</p>
+          </div>
+        );
+      }
       return (
-        <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-white shadow-xl min-w-[170px]">
+        <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-white shadow-xl min-w-[180px]">
           <p className="font-bold text-slate-200 border-b border-slate-800 pb-1.5 mb-1.5">{label}</p>
           {payload.map((entry: any, index: number) => {
             if (!entry.value || entry.value === 0) return null;
             return (
-              <div key={`item-${index}`} className="flex items-center justify-between gap-4 my-1">
+              <div key={`item-${index}`} className="my-1 flex items-center justify-between gap-4">
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
                   <span className="text-slate-300">{entry.name}:</span>
@@ -234,7 +293,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
               </div>
             );
           })}
-          <div className="mt-2 border-t border-slate-800 pt-1.5 flex items-center justify-between font-bold text-slate-100">
+          <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-1.5 font-bold text-slate-100">
             <span>Total Paid:</span>
             <span className="text-blue-400">{formatCurrency(total, currency)}</span>
           </div>
@@ -456,25 +515,18 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
 
         {/* CHART 2: Interest vs Principal Stacked Bar */}
         {activeChartTab === 'interestVsPrincipal' && (
-          <div className={`h-full w-full ${dataResolution === 'monthly' && interestVsPrincipalData.length > 36 ? 'overflow-x-auto' : ''}`}>
-            <div
-              style={{
-                width: dataResolution === 'monthly' && interestVsPrincipalData.length > 36 ? `${Math.max(100, interestVsPrincipalData.length * 28)}px` : '100%',
-                height: '100%',
-              }}
-            >
+          <div className="h-full w-full">
+            {dataResolution === 'annual' ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={interestVsPrincipalData}
-                  margin={{ top: 10, right: 20, left: 20, bottom: 0 }}
-                  barCategoryGap={dataResolution === 'monthly' ? 2 : undefined}
+                  margin={{ top: 10, right: 20, left: 10, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                   <XAxis
                     dataKey="label"
                     tick={{ fontSize: 11 }}
                     stroke="#94a3b8"
-                    interval={dataResolution === 'monthly' && interestVsPrincipalData.length > 60 ? 'preserveStartEnd' : 0}
                   />
                   <YAxis
                     tickFormatter={(val) => `${currency}${(val / 1000).toFixed(0)}k`}
@@ -490,7 +542,40 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
                   )}
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            ) : (
+              <div className="h-full w-full overflow-x-auto">
+                <div style={{ width: `${Math.max(750, interestVsPrincipalData.length * 18)}px`, height: '100%' }}>
+                  <BarChart
+                    width={Math.max(750, interestVsPrincipalData.length * 18)}
+                    height={320}
+                    data={interestVsPrincipalData}
+                    margin={{ top: 10, right: 20, left: 10, bottom: 0 }}
+                    barCategoryGap={1}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11 }}
+                      stroke="#94a3b8"
+                      interval={0}
+                      tickFormatter={(value, index) => (index % 12 === 0 ? value : '')}
+                    />
+                    <YAxis
+                      tickFormatter={(val) => `${currency}${(val / 1000).toFixed(0)}k`}
+                      tick={{ fontSize: 11 }}
+                      stroke="#94a3b8"
+                    />
+                    <Tooltip content={<CustomBarTooltip />} />
+                    <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px' }} />
+                    <Bar dataKey="Principal" name="Scheduled Principal" stackId="a" fill="#2563eb" />
+                    <Bar dataKey="Interest" name="Interest Paid" stackId="a" fill="#f59e0b" />
+                    {hasPrepayment && selectedBarSchedule === 'prepayment' && (
+                      <Bar dataKey="ExtraPayment" name="Extra Prepayment" stackId="a" fill="#10b981" radius={[2, 2, 0, 0]} />
+                    )}
+                  </BarChart>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
