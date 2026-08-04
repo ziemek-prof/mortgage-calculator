@@ -53,34 +53,24 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
   }[] = [];
 
   if (maxMonths > 0) {
-    const monthNumbersSet = new Set<number>();
-
-    // Always include Start (Month 0)
-    monthNumbersSet.add(0);
+    const monthNumbers: number[] = [];
 
     if (dataResolution === 'annual') {
       const totalYears = Math.ceil(maxMonths / 12);
+      monthNumbers.push(0); // Start
       for (let y = 1; y <= totalYears; y++) {
         const m = Math.min(y * 12, maxMonths);
-        monthNumbersSet.add(m);
+        if (!monthNumbers.includes(m)) {
+          monthNumbers.push(m);
+        }
       }
     } else {
-      for (let m = 1; m <= maxMonths; m++) {
-        monthNumbersSet.add(m);
+      for (let m = 0; m <= maxMonths; m++) {
+        monthNumbers.push(m);
       }
     }
 
-    // Always include exact payoff months if present
-    if (result.monthsStandard > 0) {
-      monthNumbersSet.add(result.monthsStandard);
-    }
-    if (result.monthsWithPrepayment > 0) {
-      monthNumbersSet.add(result.monthsWithPrepayment);
-    }
-
-    const sortedMonths = Array.from(monthNumbersSet).sort((a, b) => a - b);
-
-    sortedMonths.forEach((m) => {
+    monthNumbers.forEach((m) => {
       let label = '';
       if (m === 0) {
         label = 'Start';
@@ -90,7 +80,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
         const refRow = stdRow || prepayRow;
 
         if (dataResolution === 'annual') {
-          const yr = Math.ceil(m / 12);
+          const yr = Math.round(m / 12);
           label = refRow ? `Yr ${yr} (${refRow.year})` : `Yr ${yr}`;
         } else {
           label = refRow ? refRow.dateStr : `Mo ${m}`;
@@ -101,13 +91,13 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
       let stdBalance = 0;
       if (m === 0) {
         stdBalance = result.loanAmount;
-      } else if (m < result.monthsStandard) {
+      } else if (m <= result.monthsStandard) {
         const row = standardMap.get(m);
         if (row) {
           stdBalance = row.endBalance;
         } else {
           const prevRow = result.standardSchedule.filter((r) => r.paymentNumber <= m).pop();
-          stdBalance = prevRow ? prevRow.endBalance : result.loanAmount;
+          stdBalance = prevRow ? prevRow.endBalance : 0;
         }
       } else {
         stdBalance = 0;
@@ -117,13 +107,13 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({
       let prepayBalance = 0;
       if (m === 0) {
         prepayBalance = result.loanAmount;
-      } else if (m < result.monthsWithPrepayment) {
+      } else if (m <= result.monthsWithPrepayment) {
         const row = prepayMap.get(m);
         if (row) {
           prepayBalance = row.endBalance;
         } else {
           const prevRow = result.prepaymentSchedule.filter((r) => r.paymentNumber <= m).pop();
-          prepayBalance = prevRow ? prevRow.endBalance : result.loanAmount;
+          prepayBalance = prevRow ? prevRow.endBalance : 0;
         }
       } else {
         prepayBalance = 0;
